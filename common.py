@@ -3,6 +3,8 @@ This file contains common code for all task
 """
 import logging
 import sys
+import os
+import csv
 
 log = logging.getLogger(__name__)
 
@@ -17,9 +19,15 @@ class Model:
     This is a general interface for a task model
     """
 
-    def __init__(self, task_name):
+    def __init__(self, task_name, dataset_dir, label_file):
+        log.info(f"Creating task {task_name} preprocessing ..")
         self.task_name = task_name
-        log.info(f"Creating task {self.task_name} preprocessing ..")
+        self.dataset_dir = dataset_dir
+        self.images = [os.path.join(dataset_dir, f) for f in os.listdir(dataset_dir)]
+        self.labels = []
+        with open(label_file, 'r') as label_csv:
+            for row in csv.reader(label_csv):
+                self.labels.append(row)
 
     def train(self):
         log.info(f"Starting task {self.task_name} training ..")

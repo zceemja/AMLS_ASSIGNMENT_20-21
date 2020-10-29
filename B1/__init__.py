@@ -6,5 +6,5 @@ import common
 
 
 class Model(common.Model):
-    def __init__(self):
-        super(Model, self).__init__("B1")
+    def __init__(self, dataset_dir, label_file):
+        super(Model, self).__init__("B1", dataset_dir, label_file)
