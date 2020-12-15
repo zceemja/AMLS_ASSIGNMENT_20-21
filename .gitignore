@@ -1,5 +1,10 @@
 Datasets/*
+Data/*
 *.pyc
 *.pyo
 __pycache__/
 .idea
+report/*
+!report/ref.bib
+!report/report.tex
+!report/*.png
