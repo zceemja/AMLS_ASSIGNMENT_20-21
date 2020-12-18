@@ -1,9 +1,8 @@
 import numpy as np
 import cv2
-from matplotlib import pyplot as plt
 
 
-def show_img_grid(mat, shape, width=1200, height=600):
+def show_img_grid(mat, shape, width=400, height=400, title='Image grid'):
     if isinstance(shape, tuple):
         shape_h = shape[0]
         shape_w = shape[1]
@@ -22,7 +21,7 @@ def show_img_grid(mat, shape, width=1200, height=600):
                 i = x + W * y + (page * W * H)
                 row = mat[i, ] if row is None else np.hstack((row, mat[i, ]))
             grid = row if grid is None else np.vstack((grid, row))
-        cv2.imshow('Face Detect', grid)
+        cv2.imshow(title, grid)
         while True:
             k = cv2.waitKey(33)
             if k > 0:
@@ -32,7 +31,9 @@ def show_img_grid(mat, shape, width=1200, height=600):
     cv2.destroyAllWindows()
 
 
-def show_nn_history(history):
+def show_nn_history(history, title="", save=None):
+    from matplotlib import pyplot as plt
+
     epochs = range(1, len(history.epoch) + 1)
     if 'loss' in history.history:
         plt.plot(epochs, history.history['loss'], label='Training Loss')
@@ -45,4 +46,8 @@ def show_nn_history(history):
     plt.xlabel('Epochs')
     plt.ylabel('Loss/Accuracy')
     plt.legend()
+    plt.title(title)
+    if save is not None:
+        plt.savefig(save)
     plt.show()
+

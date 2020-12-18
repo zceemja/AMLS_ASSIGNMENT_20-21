@@ -2,7 +2,7 @@
 Multiclass tasks (cartoon_set dataset)
 B1: Face shape recognition: 5 types of face shapes
 """
-from os import path
+from os import path, listdir
 
 import cv2
 import numpy as np
@@ -14,39 +14,43 @@ from sklearn.neural_network import MLPClassifier
 
 import settings
 from Common import common
-from Common.pso import Pso
 from Common.ui import show_img_grid
 
 from Common.utils import find_best_model
 
 
 class Model(common.Model):
-    def __init__(self, dataset_dir, label_file):
+    def __init__(self, dataset_dir, label_file, img_shape=50):
+        self.img_shape = img_shape
         super(Model, self).__init__("B1", dataset_dir, label_file)
-        # saved_file = path.join('B1', 'saved.npz')
-        self.img_shape = 50
 
-        mapped_labels = {label[3]: int(label[2]) for label in self.labels[1:]}
-        X = np.zeros((len(self.images), self.img_shape, self.img_shape), dtype='uint8')
-        Y = np.zeros((len(self.images),), dtype='uint8')
+    def prepare_data(self, images_dir, labels_file, train=True):
+        images = [path.join(images_dir, f) for f in listdir(images_dir)]
+
+        X = np.zeros((len(images), self.img_shape, self.img_shape), dtype='uint8')
+        Y = np.zeros((len(images),), dtype='uint8')
+
+        mapped_labels = self.map_labels(self.read_csv(labels_file))
         print("Loading images..", end="")
-        for i, img_path in enumerate(self.images):
-            X[i, :, :] = self._load_image(img_path)
+        for i, img_path in enumerate(images):
+            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+            # img = img[180:180 + 250, 125:125 + 250]
+            img = cv2.resize(img, dsize=(self.img_shape, self.img_shape), interpolation=cv2.INTER_LANCZOS4)
+            img = cv2.equalizeHist(img)
+            X[i, :, :] = img
             Y[i] = mapped_labels[path.basename(img_path)]
-            print(f"\rLoading images.. {i+1} of {len(self.images)}", end="")
+            print(f"\rLoading images.. {i+1} of {len(images)}", end="")
         print()
 
         if settings.SHOW_GRAPHS:
             show_img_grid(X, self.img_shape)
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            X.reshape((len(self.images), -1)), Y)
+        X = X.reshape((len(images), -1))
+        return X, Y
 
-    def _load_image(self, img_path):
-        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-        # img = img[180:180 + 250, 125:125 + 250]
-        img = cv2.resize(img, dsize=(self.img_shape, self.img_shape), interpolation=cv2.INTER_LANCZOS4)
-        img = cv2.equalizeHist(img)
-        return img
+    def map_labels(self, rows):
+        generator = iter(rows)  # make sure it's a generator
+        next(generator)  # skip header
+        return {label[3]: int(label[2]) for label in generator}
 
     def tune_model(self):
         self.model = find_best_model([

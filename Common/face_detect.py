@@ -1,44 +1,69 @@
 import cv2
 import dlib
-import requests
 import logging
 import os
 from multiprocessing import Pool
 import numpy as np
+import settings
+import bz2
 
 log = logging.getLogger(__name__)
 
-HAAR_BASE_DIR = "/usr/share/opencv4/haarcascades"
-HAAR_BASE_DIR_USER = "Data"
-HAAR_GITHUB_URL = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/"
-HAAR_CASCADE_URLS = {
-    'face': HAAR_BASE_DIR + 'haarcascade_frontalface_default.xml',
-    'eyes': HAAR_BASE_DIR + 'haarcascade_eye.xml',
-    'smile': HAAR_BASE_DIR + 'haarcascade_smile.xml',
+HAAR_CASCADES = {
+    'face': 'haarcascade_frontalface_default.xml',
+    'eyes': 'haarcascade_eye.xml',
+    'smile': 'haarcascade_smile.xml',
+    'eyeglasses': 'haarcascade_eye_tree_eyeglasses.xml'
 }
 
 FACE_DETECTOR = dlib.get_frontal_face_detector()
-FACE_PREDICTOR = dlib.shape_predictor(os.path.join(HAAR_BASE_DIR_USER, 'shape_predictor_68_face_landmarks.dat'))
 FACE_PREDICTOR_SHAPE = (68, 2)
+FACE_PREDICTOR = None
+
+FACE_CASCADE = None
+EYE_CASCADE = None
+EYE_GLASSES_CASCADE = None
 
 
-def download_classifiers():
-    for name, url in HAAR_CASCADE_URLS.items():
-        fpath = os.path.abspath(os.path.join(HAAR_BASE_DIR_USER, name + '.xml'))
-        if os.path.isfile(fpath):
-            continue
-        log.info(f"Download haar cascade for {name} to {fpath}")
-        with requests.get(url, stream=True) as r:
-            r.raise_for_status()
-            with open(fpath, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=1024):
-                    f.write(chunk)
+def setup_dependencies():
+    import requests
+    global FACE_CASCADE, EYE_CASCADE, EYE_GLASSES_CASCADE, FACE_PREDICTOR
 
+    for key, file in HAAR_CASCADES.items():
+        fpath = os.path.join(settings.HAAR_DIR, file)
+        if not os.path.exists(fpath):
+            fpath = os.path.join(settings.DATA_PATH, file)
+        if not os.path.exists(fpath):
+            log.info(f"Download haar cascade for {key} to {fpath}")
+            with requests.get(settings.HAAR_URL + file, stream=True) as r:
+                r.raise_for_status()
+                with open(fpath, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=1024):
+                        f.write(chunk)
+        if key == 'face':
+            FACE_CASCADE = cv2.CascadeClassifier(fpath)
+        elif key == 'eyes':
+            EYE_CASCADE = cv2.CascadeClassifier(fpath)
+        elif key == 'eyeglasses':
+            EYE_GLASSES_CASCADE = cv2.CascadeClassifier(fpath)
 
-# download_classifiers()
-FACE_CASCADE = cv2.CascadeClassifier(os.path.join(HAAR_BASE_DIR, 'haarcascade_frontalface_default.xml'))
-EYE_CASCADE = cv2.CascadeClassifier(os.path.join(HAAR_BASE_DIR, 'haarcascade_eye.xml'))
-EYE_GLASSES_CASCADE = cv2.CascadeClassifier(os.path.join(HAAR_BASE_DIR, 'haarcascade_eye_tree_eyeglasses.xml'))
+    if os.path.exists(settings.DLIB_PREDICTOR):
+        fpath = settings.DLIB_PREDICTOR
+    else:
+        fpath = os.path.join(settings.DATA_PATH, 'shape_predictor_68_face_landmarks.dat')
+        if not os.path.exists(fpath):
+            log.info(f"Downloading face landmark predictor to {fpath}")
+            decomp = bz2.BZ2Decompressor()
+            with requests.get(settings.DLIB_PREDICTOR_URL, stream=True) as r:
+                r.raise_for_status()
+                d = 0
+                with open(fpath, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=1024):
+                        d += 1
+                        f.write(decomp.decompress(chunk))
+                        print(f'\rDownloaded {d/1024:.1f}MiB', end='')
+                    print()
+    FACE_PREDICTOR = dlib.shape_predictor(fpath)
 
 
 def make_square(x, y, h, w):

@@ -1,14 +1,14 @@
 from os import path
 import pickle
 
-from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_val_score
 import numpy as np
 import settings
 
+
 def cache(file_name, load_func, *func_args, **func_kwargs):
     """
-    Caches result from
+    Caches result from any function
     :param file_name: name for caching
     :param load_func: function that outputs result (if cache not available)
     :return: result from function
@@ -29,9 +29,8 @@ def find_best_model(args, train, test, cv=5):
     for arg in args:
         model = arg['model']
         del arg['model']
-        if isinstance(model, BaseEstimator):
-            model = model(**arg)
-            scores = cross_val_score(model, train, test, cv=cv, n_jobs=None if 'n_jobs' in arg else settings.THREADS)
+        model = model(**arg)
+        scores = cross_val_score(model, train, test, cv=cv, n_jobs=None if 'n_jobs' in arg else settings.THREADS)
         # elif isinstance(model, list):
         #     kf = KFold(n_splits=cv)
         #     scores = np.zeros((cv, ))
@@ -46,8 +45,6 @@ def find_best_model(args, train, test, cv=5):
         #         kmodel.fit(X_train, y_train, validation_data=(X_test, y_test), **arg.get('fit', {}))
         #         scores[i] = kmodel.evaluate(X_test, y_test)[1]
         #         kmodel = None
-        else:
-            raise RuntimeError(f"Unknown model {model.__class__}")
         score = scores.mean()
         print(f"Model {model} scored {score:.5f} (+/- {scores.std()*2:.5f})")
         if score > highest_score:

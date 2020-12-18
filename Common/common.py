@@ -2,13 +2,10 @@
 This file contains common code for all task
 """
 import logging
-import sys
-import os
 import csv
-import numpy as np
 import tensorflow as tf
-import cv2
 from sklearn import metrics
+from sklearn.model_selection import train_test_split
 
 log = logging.getLogger(__name__)
 
@@ -28,57 +25,62 @@ class Model:
         self.log = logging.getLogger(task_name)
         self.log.info(f"Creating task preprocessing ..")
         self.task_name = task_name
-        self.dataset_dir = dataset_dir
-        self.images = [os.path.join(dataset_dir, f) for f in os.listdir(dataset_dir)]
-        self.labels = []
-        with open(label_file, 'r') as label_csv:
-            for row in csv.reader(label_csv, delimiter='\t'):
-                self.labels.append(row)
-
-        # Setup common objects
         self.model = None
-        self.X_train = np.array([])
-        self.X_test = np.array([])
-        self.y_train = np.array([])
-        self.y_test = np.array([])
+
+        self.log.info("Preparing dataset..")
+        X, y = self.prepare_data(dataset_dir, label_file)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y)
+
+    def map_labels(self, rows):
+        """
+        Extracts labels from csv and maps them to dict as {img_basename: label_value}
+        """
+        raise NotImplementedError("Method read_labels not defined in task " + self.task_name)
+
+    @staticmethod
+    def read_csv(filename, delimiter='\t'):
+        with open(filename, 'r') as label_csv:
+            for row in csv.reader(label_csv, delimiter=delimiter):
+                yield row
 
     def tune_model(self):
         """
-        This function is used to select best model/optimise hyperparameters
+        This function is used to select best model/optimise hyper-parameters
         """
-        self.log.info(f"Tuning model ..")
+        raise NotImplementedError("Method tune_model not defined in task " + self.task_name)
 
-    def load_images(self, image_dir):
+    def prepare_data(self, images_dir, labels_file, train=True):
         """
-        Load and preprocess images
+        Loads and preprocesses images and labels
+        :param images_dir: directory of images
+        :param labels_file: label csv file
+        :param train: is this is training or testing data. If training, some data will be cached
+        :return: dataset X and Y
         """
-        imgs = [f for f in os.listdir(image_dir) if os.path.isfile(os.path.join(image_dir, f))]
-        results = []
-        for image_path in imgs:
-            results.append(cv2.imread(image_path))
-        return results
+        raise NotImplementedError("Method prepare_data not defined in task " + self.task_name)
 
     def train(self):
         self.log.info(f"Starting task {self.task_name} training ..")
         if self.model is None:
             raise RuntimeError("Model must be selected before training")
         self.model.fit(self.X_train, self.y_train)
+        y_pred = self.model.predict(self.X_test)
+        score = metrics.accuracy_score(self.y_test, y_pred)
+        self.log.info(f"Task {self.task_name} model achieved {score * 100:.3}% accuracy with train data")
+        return score
 
-    def test(self):
+    def test(self, dataset_dir, label_file):
+        """
+        Test model with completely new data
+        """
         self.log.info(f"Starting task {self.task_name} testing ..")
         if self.model is None:
             raise RuntimeError("Model must be selected and trained before testing")
-        y_pred = self.predict(self.X_test)
-        score = metrics.accuracy_score(self.y_test, y_pred)
-        self.log.info(f"Task {self.task_name} model achieved {score*100:.3}% accuracy")
-
-    def predict(self, data):
-        """
-        Predict some samples on a model
-        """
-        if self.model is None:
-            raise RuntimeError("Model must be selected and trained before predicting")
-        return self.model.predict(data)
+        X, y = self.prepare_data(dataset_dir, label_file, train=False)
+        y_pred = self.model.predict(X)
+        score = metrics.accuracy_score(y, y_pred)
+        self.log.info(f"Task {self.task_name} model achieved {score * 100:.3}% accuracy with test data")
+        return score
 
     def cleanup(self):
         self.log.info(f"Cleaning model for task ..")
@@ -89,13 +91,3 @@ class Model:
         self.y_train = None
         self.y_test = None
         self.model = None
-
-
-_log_root = logging.getLogger()
-_log_root.setLevel(logging.DEBUG)
-
-_log_ch = logging.StreamHandler(sys.stdout)
-_log_ch.setLevel(logging.DEBUG)
-_formatter = logging.Formatter('[%(asctime)s][%(name)s.%(funcName)s][%(levelname)s] %(message)s')
-_log_ch.setFormatter(_formatter)
-_log_root.addHandler(_log_ch)

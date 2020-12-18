@@ -13,58 +13,56 @@ from sklearn.model_selection import train_test_split, cross_val_score
 
 import settings
 from Common import common, utils, face_detect
-from os import path
+from os import path, listdir
 import numpy as np
 
 from Common.ui import show_img_grid
 from Common.utils import find_best_model
 
 class Model(common.Model):
-    def __init__(self, dataset_dir, label_file):
+    # Image preprocessing size
+    PSIZE=50
+
+    def __init__(self, dataset_dir, label_file, img_shape=50):
+        self.img_shape = img_shape
         super(Model, self).__init__("B2", dataset_dir, label_file)
-        # self.images = self.images[:300]
-        self.images = utils.cache(
-            path.join('Data', 'cartoon_without_non_transp_glasses.bin'),
-            self._preprocess_data
-        )
 
-        self.img_shape = 50
+    def prepare_data(self, images_dir, labels_file, train=True):
+        images = [path.join(images_dir, f) for f in listdir(images_dir)]
+        mapped_labels = self.map_labels(self.read_csv(labels_file))
 
-
-        # self.face_feat = utils.cache(path.join('Data', 'cartoon_face_feat.bin'), face_detect.extract_face_features, images)
-
-        # cachef = path.join('Data', 'cartoon_eyes.bin')
-        # eyes = {n: r for n, r in utils.cache(cachef, face_detect.detect_eyes, self.images)}
-        mapped_labels = {label[3]: int(label[1]) for label in self.labels[1:]}
-        X = np.zeros((len(self.images), self.img_shape, self.img_shape, 3), dtype='uint8')
-        Y = np.zeros((len(self.images),), dtype='uint8')
+        # Do not preprocess for non-transparent glasses on test data
+        if train:
+            images = utils.cache(
+                path.join(settings.DATA_PATH, 'cartoon_without_non_transp_glasses.bin'), self._preprocess_data, images)
+        else:
+            images = self._preprocess_data(images)
+        X = np.zeros((len(images), self.img_shape, self.img_shape//2, 3), dtype='uint8')
+        Y = np.zeros((len(images),), dtype='uint8')
         print("Loading images..", end="")
-        for i, img_path in enumerate(self.images):
+        for i, img_path in enumerate(images):
             # X[i,] = self._load_image(img_path, None)
             img = cv2.imread(img_path)
             h, w = img.shape[0], img.shape[1]
             wc = int(w * 0.1)
             hc = int(h * 0.1)
-            img = img[hc:h-hc*2, wc:w//2, ]
-            X[i, ] = cv2.resize(img, dsize=(self.img_shape, self.img_shape), interpolation=cv2.INTER_LANCZOS4)
+            img = img[hc:h - hc * 2, wc:w // 2, ]
+            X[i, ] = cv2.resize(img, dsize=(self.img_shape//2, self.img_shape), interpolation=cv2.INTER_LANCZOS4)
             Y[i] = mapped_labels[path.basename(img_path)]
-            print(f"\rLoading images.. {i + 1} of {len(self.images)}", end="")
-            # if i > 500:
-            #     break
-        print(f"\rLoaded all {len(self.images)} images")
+            print(f"\rLoading images.. {i + 1} of {len(images)}", end="")
+
+        print(f"\rLoaded all {len(images)} images")
 
         if settings.SHOW_GRAPHS:
-            show_img_grid(X, self.img_shape)
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            X.reshape((len(self.images), -1)), Y, test_size=0.5)
-        # self.X_train = self.X_train[0:500, :]
-        # self.y_train = self.y_train[0:500]
+            show_img_grid(X, (self.img_shape, self.img_shape//2))
+        X = X.reshape((len(images), -1))
+        return X, Y
 
-    def _preprocess_data(self):
+    def _preprocess_data(self, images):
         good_images = set()
-        images = np.zeros((len(self.images), 50, 50, 3), dtype='uint8')
-        print(f'Detecting non-transparent glasses.. 0/{len(self.images)}', end='')
-        for i, img_path in enumerate(self.images):
+        display_imgs = np.zeros((len(images), self.PSIZE, self.PSIZE, 3), dtype='uint8')
+        print(f'Detecting non-transparent glasses.. 0/{len(images)}', end='')
+        for i, img_path in enumerate(images):
             img = cv2.imread(img_path)
             x, y, w, h = 240, 180, 50, 50
             img = img[x:x + w, y:y + h]
@@ -77,16 +75,21 @@ class Model(common.Model):
                 img = cv2.putText(img, f'{mean:.1f}', (1, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 2, cv2.LINE_AA)
                 colour = (0, 255, 0) if mean > 50 else (0, 0, 255)
                 img = cv2.putText(img, f'{mean:.1f}', (1, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, colour, 1, cv2.LINE_AA)
-                images[i, ] = img
+                display_imgs[i, ] = img
             if mean > 50:
                 good_images.add(img_path)
-            print(f'\rDetecting non-transparent glasses.. {i+1}/{len(self.images)}', end='')
-        bad_images_no = len(self.images) - len(good_images)
-        print(f'\rDetected non-transparent glasses {bad_images_no}/{len(self.images)} '
-                 f'({bad_images_no/len(self.images)*100:.3f}%)')
+            print(f'\rDetecting non-transparent glasses.. {i+1}/{len(images)}', end='')
+        bad_images_no = len(images) - len(good_images)
+        print(f'\rDetected non-transparent glasses {bad_images_no}/{len(images)} '
+                 f'({bad_images_no/len(images)*100:.3f}%)')
         if settings.SHOW_GRAPHS:
-            show_img_grid(images, (50, 50))
+            show_img_grid(display_imgs, self.PSIZE)
         return good_images
+
+    def map_labels(self, rows):
+        generator = iter(rows)  # make sure it's a generator
+        next(generator)  # skip header
+        return {label[3]: int(label[1]) for label in generator}
 
     def _load_image(self, img_path, features=None):
         img = cv2.imread(img_path)  # , cv2.IMREAD_GRAYSCALE)
@@ -116,6 +119,7 @@ class Model(common.Model):
         return img
 
     def tune_model(self):
+
         self.model = find_best_model([
             {'model': svm.SVC, 'C': 0.1, 'kernel': 'linear'},
             {'model': svm.SVC, 'C': 1, 'kernel': 'linear'},
