@@ -7,4 +7,8 @@ __pycache__/
 report/*
 !report/ref.bib
 !report/report.tex
-!report/*.png
+!report/graphics
+!report/graphics/*.png
+!report/graphics/*.eps
+!report/graphics/*.dia
+report/graphics/*.dia~
